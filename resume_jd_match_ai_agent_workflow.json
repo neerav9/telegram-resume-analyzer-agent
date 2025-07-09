@@ -1,0 +1,683 @@
+{
+  "name": "job-descritpion",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "name": "Telegram Trigger - Receive Resume or JD",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        100
+      ],
+      "webhookId": "random-webhook-id",
+      "id": "d8f56c72-7be6-4ca3-898e-5ff2fcf2881c",
+      "credentials": {
+        "telegramApi": {
+          "id": "aXV1bKbjfAx52yNj",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot7629567507:AAGxROQRaSsebhZ-0Ow7KS74_6PRX1TeZos/{{ $json.result.file_path }}\n",
+        "responseFormat": "file",
+        "dataPropertyName": "={{ $('if_pdf_arrived').item.json.document.file_name }}",
+        "options": {}
+      },
+      "name": "Download Resume PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -100
+      ],
+      "id": "9881d698-7b90-4168-be25-4a7c7cf278a7"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const message = item.json.message || {};\nconst document = message.document || {};\nconst mimeType = document.mime_type || null;\n\nconst isPDF = mimeType === \"application/pdf\";\nconst isText = typeof message.text === \"string\" && message.text.trim().length > 0;\n\nreturn {\n  ...message,\n  isPDF,\n  isText,\n  mimeType,\n  originalText: isText ? message.text : null,\n  fileName: isPDF ? document.file_name : null,\n  fileId: isPDF ? document.file_id : null,\n  chatId: message.chat?.id || null,\n  userId: message.from?.id || null\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        100
+      ],
+      "id": "fcfa2205-3740-486f-b1c2-58d69ccd84bd",
+      "name": "Extract Message Type Info"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        -100
+      ],
+      "id": "e18647cd-6a94-46aa-a9a4-6d96733c0926",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO resumes (user_id, resume_text, timestamp)\nVALUES ( {{ $('if_pdf_arrived').item.json.from.id }},'{{ $json.text }}', NOW());\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1180,
+        -100
+      ],
+      "id": "419ea23a-66cc-4d91-b1d4-03ffe9442d9d",
+      "name": "Store Resume Text in Database",
+      "credentials": {
+        "postgres": {
+          "id": "mJLNlRBtwS1LYgJP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3fa8ec02-7aff-45fb-9ddc-22c352f43f75",
+              "leftValue": "={{ $json.isPDF }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        0
+      ],
+      "id": "430deeca-cc34-47c3-bd3d-1718b1baf0c9",
+      "name": "if_pdf_arrived",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1a6712a-c928-43a6-870b-35c5220f89bc",
+              "leftValue": "={{ $json.isText }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        160
+      ],
+      "id": "015f9fde-da15-4f48-a5db-440117539926",
+      "name": "if_text_arrived"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (SELECT 1 FROM resumes WHERE user_id = '{{ $('Extract Message Type Info').item.json.from.id }}') AS resume_present,\n  EXISTS (SELECT 1 FROM job_descriptions WHERE user_id = '{{ $('Extract Message Type Info').item.json.from.id }}') AS jd_present;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        140
+      ],
+      "id": "966fdd20-a452-4aa0-8e8e-f5850ff32a44",
+      "name": "Check which node is missing",
+      "credentials": {
+        "postgres": {
+          "id": "mJLNlRBtwS1LYgJP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resumePresent = $input.first().json.resume_present;\nconst jdPresent = $input.first().json.jd_present;\nconst base = $input.first().json;\n\nlet missingInput = \"\";\n\nif (!resumePresent && !jdPresent) {\n  missingInput = \"❗Both resume and job description are missing.\";\n} else if (!resumePresent) {\n  missingInput = \"📝 Got your job description! Please send your resume (PDF).\";\n} else if (!jdPresent) {\n  missingInput = \"📄 Got your resume! Now please send your job description.\";\n} else {\n  missingInput = \"✅ Both inputs received!\";\n}\n\nreturn [\n  {\n    json: {\n      ...base,\n      missingInput\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        140
+      ],
+      "id": "370da318-4161-4c82-8989-089c5927639c",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger - Receive Resume or JD').item.json.message.chat.id }}",
+        "text": "={{ $json.missingInput }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1700,
+        240
+      ],
+      "id": "7baa4145-d6bf-4c07-9c95-1cbfc422461e",
+      "name": "Send a text message",
+      "webhookId": "09fa1d28-1d4b-4f37-9b96-7ddbe04d1435",
+      "credentials": {
+        "telegramApi": {
+          "id": "aXV1bKbjfAx52yNj",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## 🎯 TASK:\nYou are a concise hiring assistant. Compare the provided resume and job description to give a match percentage and actionable improvement points.\n\n---\n\n## 🧾 INPUTS:\n**Resume:**\n{{ $json.resume_text }}\n\n**Job Description:**\n{{ $json.jd_text }}\n\n---\n\n## ✅ OBJECTIVES:\n\n### 📊 Match Score:\nProvide a **percentage match score** based on overall alignment.\n\n### 🛠️ Suggestions to Improve:\nList **3-5 key, actionable suggestions** to increase the match. Focus on:\n* Specific skills/tools to add.\n* Phrases or keywords from the job description to include.\n* Areas to quantify achievements (metrics/results).\n\n---\n\n## 🧑‍🏫 FORMAT THE OUTPUT LIKE THIS:\n\n```markdown\n## ✅ Match Score: **[Percentage]%**\n\n---\n\n### 🛠️ Suggestions to Improve:\n* **[Concise suggestion 1, e.g., Quantify achievements: Add percentages/savings to projects.]**\n* **[Concise suggestion 2, e.g., Include keywords: Integrate \"stakeholder communication\" and \"data visualization\".]**\n* **[Concise suggestion 3, e.g., Add tools: Mention proficiency in specific software (e.g., Tableau, SQL).]**\n* **[Concise suggestion 4, if applicable]**\n* **[Concise suggestion 5, if applicable]**",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2200,
+        20
+      ],
+      "id": "abccee98-6e66-4dbe-b288-872472a2b6ae",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        200
+      ],
+      "id": "b588a89b-3cf0-4edb-8a3e-68ae86c3e93e",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NM9p9k8PNgs4GI3j",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "57543559-8226-459b-9b6a-45d4572829c3",
+              "leftValue": "={{ $json.resume_present }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "f390f404-b6d2-4025-a19c-1e5445d79484",
+              "leftValue": "={{ $json.jd_present }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        140
+      ],
+      "id": "4692ed1d-b98d-4f3d-8c9c-f1a4e5cb85a4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.document.file_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        -80
+      ],
+      "id": "5e24a6f4-9f8d-4db7-8df6-76a2b1312ff7",
+      "name": "Get a file",
+      "webhookId": "c0054cbd-1691-4ae8-ae18-b1132c45cf72",
+      "credentials": {
+        "telegramApi": {
+          "id": "aXV1bKbjfAx52yNj",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO job_descriptions (user_id, jd_text, timestamp)\nVALUES ({{ $json.from.id }},'{{ $json.text }}',now())",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1020,
+        140
+      ],
+      "id": "1d174fc9-0846-43bd-a650-0e9ae0bddd9c",
+      "name": "Store Job Description Text in Database1",
+      "credentials": {
+        "postgres": {
+          "id": "mJLNlRBtwS1LYgJP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// This code block receives the output from your \"Combined SQL Query Output\"\n// which is an array of objects like:\n// [\n//   { \"resume_text\": \"...\" },\n//   { \"jd_text\": \"...\" }\n// ]\n\nconst inputData = $input.all();\n// Ensure inputData is an array and has at least two elements\nif (!Array.isArray(inputData) || inputData.length < 2) {\n    console.error(\"Error: Input data for 'Format LLM Inputs' is not in the expected array format.\", inputData);\n    return {};\n}\n\n// Extract resume_text from the first object (index 0)\nconst resumeText = inputData[0]?.json?.resume_text;\n\n// Extract jd_text from the second object (index 1)\nconst jdText = inputData[1]?.json?.jd_text;\nconst userId = inputData[2]?.json?.user_id;\n// Create a single, flattened object with both resume_text and jd_text\nconst formattedOutput = {\n    resume_text: resumeText,\n    jd_text: jdText,\n    chat_id: userId\n};\n\n// Return this new, formatted object in an array (as required in runOnceForAllItems mode)\nreturn [formattedOutput];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        20
+      ],
+      "id": "37af8b7d-6b0c-47b1-84e5-4105e7ce4d54",
+      "name": "Format LLM Inputs"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT resume_text FROM resumes WHERE user_id = {{ $json.message.from.id }} ORDER BY id DESC Limit 1;\nSELECT jd_text FROM job_descriptions WHERE user_id =  {{ $json.message.from.id }} ORDER BY id DESC Limit 1;\nselect user_id from resumes where user_id =  {{ $json.message.from.id }} order BY id DESC Limit 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1860,
+        20
+      ],
+      "id": "cd5aceee-8264-4a1e-b593-ce0deb74c25b",
+      "name": "inputData",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "mJLNlRBtwS1LYgJP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Format LLM Inputs').item.json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "replyMarkup": "forceReply",
+        "forceReply": {
+          "force_reply": true
+        },
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2500,
+        20
+      ],
+      "id": "80c46d59-5a81-469a-9617-78f21e8634f9",
+      "name": "result",
+      "webhookId": "f4392314-fc32-4815-9f79-64f9da851af9",
+      "credentials": {
+        "telegramApi": {
+          "id": "aXV1bKbjfAx52yNj",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0f2016d6-6e13-4d0e-b8b8-b65f1fa57c2c",
+              "name": "from.id",
+              "value": "={{ $json.from.id }}",
+              "type": "number"
+            },
+            {
+              "id": "a3b3ffc6-877c-4094-9de4-aee56d8d3898",
+              "name": "text",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        140
+      ],
+      "id": "aa0d62cb-bbc4-4dfd-a097-dbd3be966aaf",
+      "name": "Job_description_text"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1772ef1f-2d16-4c8d-aff3-d6a87912852b",
+              "name": "message.from.id",
+              "value": "={{ $('Telegram Trigger - Receive Resume or JD').item.json.message.from.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1700,
+        40
+      ],
+      "id": "0b6e7ad0-1f0b-46c2-bcf1-eb933c9189fa",
+      "name": "Chat_id_extractor"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger - Receive Resume or JD": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Type Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Type Info": {
+      "main": [
+        [
+          {
+            "node": "if_pdf_arrived",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if_text_arrived",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Resume PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Store Resume Text in Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Resume Text in Database": {
+      "main": [
+        [
+          {
+            "node": "Check which node is missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if_pdf_arrived": {
+      "main": [
+        [
+          {
+            "node": "Get a file",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "if_text_arrived": {
+      "main": [
+        [
+          {
+            "node": "Job_description_text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check which node is missing": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        []
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Chat_id_extractor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file": {
+      "main": [
+        [
+          {
+            "node": "Download Resume PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Job Description Text in Database1": {
+      "main": [
+        [
+          {
+            "node": "Check which node is missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format LLM Inputs": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputData": {
+      "main": [
+        [
+          {
+            "node": "Format LLM Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job_description_text": {
+      "main": [
+        [
+          {
+            "node": "Store Job Description Text in Database1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat_id_extractor": {
+      "main": [
+        [
+          {
+            "node": "inputData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6bccd185-4fd3-4cf4-bf6d-cf2d4ac50136",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9238d976ce38caa45cd3dd9fbf84b62640bffd5b5de2c804d6f042cde1a6d06b"
+  },
+  "id": "SwKHBZay2ThABuDH",
+  "tags": []
+}
